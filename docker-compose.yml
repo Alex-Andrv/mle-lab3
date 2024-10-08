@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  penguin-app:
+    build: .
+    image: sesh31/mle-lab3-penguin-app:latest
+    command: sh -c "python src/preprocess.py && python src/DataLoader.py && python src/app.py"
+    ports:
+      - "5001:5001"
+    depends_on:
+      - postgres
+      - vault
+    networks:
+      - vault-network
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_TOKEN: "root"
+
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: penguin_user
+      POSTGRES_PASSWORD: penguin_password
+      POSTGRES_DB: penguins_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - vault-network
+
+  vault:
+    image: hashicorp/vault:latest
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+    ports:
+      - "8200:8200"
+    command: server -dev -dev-listen-address=0.0.0.0:8200
+    volumes:
+      - ./vault-data:/vault/logs
+    networks:
+      - vault-network
+    entrypoint: /bin/sh -c "
+      vault server -dev -dev-listen-address=0.0.0.0:8200 & \
+      until wget -q -O- http://127.0.0.1:8200/v1/sys/health | grep '\"initialized\":true' > /dev/null; do
+      echo 'Waiting for Vault to be ready...';
+      sleep 2;
+      done && \
+      export VAULT_ADDR='http://0.0.0.0:8200' && \
+      vault kv put secret/db POSTGRES_USER=penguin_user POSTGRES_PASSWORD=penguin_password POSTGRES_DB=penguins_db && \
+      echo 'DONE!!!' && \
+      tail -f /dev/null"
+
+
+volumes:
+  pgdata:
+
+networks:
+  vault-network:
